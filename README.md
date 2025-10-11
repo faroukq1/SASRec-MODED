@@ -71,11 +71,11 @@ pls check paper author's [repo](https://github.com/kang205/SASRec) for detailed 
 }
 ```
 
-I see a dozen of citations of the repo recently🫰, here's the repo bib if needed.
+I see a dozen of citations of the repo🫰, pls use the bib as below if needed.
 ```
 @software{Huang_SASRec_pytorch,
 author = {Huang, Zan},
-title = {PyTorch implementation for SASRec},
+title = {SASRec.pytorch: PyTorch implementation for Self-Attentive Sequential Recommendation},
 url = {https://github.com/pmixer/SASRec.pytorch},
 year={2020}
 }
