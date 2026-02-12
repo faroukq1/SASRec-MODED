@@ -51,7 +51,7 @@ if __name__ == '__main__':
     print('average sequence length: %.2f' % (cc / len(user_train)))
     
     f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
-    f.write('epoch (val_ndcg, val_hr) (test_ndcg, test_hr)\n')
+    f.write('epoch,val_ndcg10,val_hr10,test_ndcg10,test_hr10,test_ndcg20,test_hr20,test_recall10,test_recall20,test_precision10,test_precision20,test_mrr10,test_mrr20,test_map10,test_map20\n')
     
     sampler = WarpSampler(user_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
     model = SASRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
@@ -86,7 +86,24 @@ if __name__ == '__main__':
     if args.inference_only:
         model.eval()
         t_test = evaluate(model, dataset, args)
-        print('test (NDCG@10: %.4f, HR@10: %.4f)' % (t_test[0], t_test[1]))
+        print('\n' + '='*60)
+        print('Test Set Metrics:')
+        print('='*60)
+        print('\nMetrics @ K=10 (Sequential Recommendation Standard):')
+        print('  NDCG@10:      %.4f' % t_test['NDCG@10'])
+        print('  Recall@10:    %.4f' % t_test['Recall@10'])
+        print('  Hit Rate@10:  %.4f' % t_test['HR@10'])
+        print('  Precision@10: %.4f' % t_test['Precision@10'])
+        print('  MRR@10:       %.4f' % t_test['MRR@10'])
+        print('  MAP@10:       %.4f' % t_test['MAP@10'])
+        print('\nMetrics @ K=20 (Graph Recommendation Standard):')
+        print('  NDCG@20:      %.4f' % t_test['NDCG@20'])
+        print('  Recall@20:    %.4f' % t_test['Recall@20'])
+        print('  Hit Rate@20:  %.4f' % t_test['HR@20'])
+        print('  Precision@20: %.4f' % t_test['Precision@20'])
+        print('  MRR@20:       %.4f' % t_test['MRR@20'])
+        print('  MAP@20:       %.4f' % t_test['MAP@20'])
+        print('='*60)
     
     # ce_criterion = torch.nn.CrossEntropyLoss()
     # https://github.com/NVIDIA/pix2pixHD/issues/9 how could an old bug appear again...
@@ -94,7 +111,7 @@ if __name__ == '__main__':
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
 
     best_val_ndcg, best_val_hr = 0.0, 0.0
-    best_test_ndcg, best_test_hr = 0.0, 0.0
+    best_test_metrics = {}
     T = 0.0
     t0 = time.time()
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
@@ -123,20 +140,27 @@ if __name__ == '__main__':
             print('Evaluating', end='')
             t_test = evaluate(model, dataset, args)
             t_valid = evaluate_valid(model, dataset, args)
-            print('epoch:%d, time: %f(s), valid (NDCG@10: %.4f, HR@10: %.4f), test (NDCG@10: %.4f, HR@10: %.4f)'
-                    % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1]))
+            print('\nepoch:%d, time: %f(s)' % (epoch, T))
+            print('  Valid - NDCG@10: %.4f, HR@10: %.4f' % (t_valid['NDCG@10'], t_valid['HR@10']))
+            print('  Test  - NDCG@10: %.4f, HR@10: %.4f, Recall@10: %.4f, Precision@10: %.4f' 
+                  % (t_test['NDCG@10'], t_test['HR@10'], t_test['Recall@10'], t_test['Precision@10']))
 
-            if t_valid[0] > best_val_ndcg or t_valid[1] > best_val_hr or t_test[0] > best_test_ndcg or t_test[1] > best_test_hr:
-                best_val_ndcg = max(t_valid[0], best_val_ndcg)
-                best_val_hr = max(t_valid[1], best_val_hr)
-                best_test_ndcg = max(t_test[0], best_test_ndcg)
-                best_test_hr = max(t_test[1], best_test_hr)
+            if t_valid['NDCG@10'] > best_val_ndcg or t_valid['HR@10'] > best_val_hr:
+                best_val_ndcg = max(t_valid['NDCG@10'], best_val_ndcg)
+                best_val_hr = max(t_valid['HR@10'], best_val_hr)
+                best_test_metrics = t_test.copy()
                 folder = args.dataset + '_' + args.train_dir
                 fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
                 fname = fname.format(epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
                 torch.save(model.state_dict(), os.path.join(folder, fname))
 
-            f.write(str(epoch) + ' ' + str(t_valid) + ' ' + str(t_test) + '\n')
+            f.write('%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n' % 
+                    (epoch, t_valid['NDCG@10'], t_valid['HR@10'], 
+                     t_test['NDCG@10'], t_test['HR@10'], t_test['NDCG@20'], t_test['HR@20'],
+                     t_test['Recall@10'], t_test['Recall@20'], 
+                     t_test['Precision@10'], t_test['Precision@20'],
+                     t_test['MRR@10'], t_test['MRR@20'],
+                     t_test['MAP@10'], t_test['MAP@20']))
             f.flush()
             t0 = time.time()
             model.train()
@@ -148,5 +172,26 @@ if __name__ == '__main__':
             torch.save(model.state_dict(), os.path.join(folder, fname))
     
     f.close()
+    
+    # Print final best metrics
+    if best_test_metrics:
+        print('\n' + '='*60)
+        print('Best Test Set Metrics (based on validation performance):')
+        print('='*60)
+        print('\nMetrics @ K=10 (Sequential Recommendation Standard):')
+        print('  NDCG@10:      %.4f' % best_test_metrics['NDCG@10'])
+        print('  Recall@10:    %.4f' % best_test_metrics['Recall@10'])
+        print('  Hit Rate@10:  %.4f' % best_test_metrics['HR@10'])
+        print('  Precision@10: %.4f' % best_test_metrics['Precision@10'])
+        print('  MRR@10:       %.4f' % best_test_metrics['MRR@10'])
+        print('  MAP@10:       %.4f' % best_test_metrics['MAP@10'])
+        print('\nMetrics @ K=20 (Graph Recommendation Standard):')
+        print('  NDCG@20:      %.4f' % best_test_metrics['NDCG@20'])
+        print('  Recall@20:    %.4f' % best_test_metrics['Recall@20'])
+        print('  Hit Rate@20:  %.4f' % best_test_metrics['HR@20'])
+        print('  Precision@20: %.4f' % best_test_metrics['Precision@20'])
+        print('  MRR@20:       %.4f' % best_test_metrics['MRR@20'])
+        print('  MAP@20:       %.4f' % best_test_metrics['MAP@20'])
+        print('='*60)
     sampler.close()
     print("Done")

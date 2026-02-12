@@ -1,0 +1,11 @@
+# Required packages for SASRec model training
+
+# PyTorch - Deep Learning Framework
+torch>=1.6.0
+
+# NumPy - Numerical Computing
+numpy>=1.19.0
+
+# Optional but recommended for better performance
+# CUDA-enabled PyTorch for GPU acceleration
+# Install with: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118

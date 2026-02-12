@@ -124,13 +124,55 @@ def data_partition(fname):
             user_test[user].append(User[user][-1])
     return [user_train, user_valid, user_test, usernum, itemnum]
 
+# Helper function to compute all metrics at multiple K values
+def compute_metrics_at_k(rank, k_values):
+    metrics = {}
+    for k in k_values:
+        # NDCG@K
+        if rank < k:
+            metrics[f'NDCG@{k}'] = 1 / np.log2(rank + 2)
+        else:
+            metrics[f'NDCG@{k}'] = 0.0
+        
+        # Recall@K (for single item, it's binary)
+        metrics[f'Recall@{k}'] = 1.0 if rank < k else 0.0
+        
+        # Hit Rate@K (same as Recall for single item)
+        metrics[f'HR@{k}'] = 1.0 if rank < k else 0.0
+        
+        # Precision@K
+        metrics[f'Precision@{k}'] = 1.0 / k if rank < k else 0.0
+        
+        # MRR@K (Mean Reciprocal Rank)
+        if rank < k:
+            metrics[f'MRR@{k}'] = 1.0 / (rank + 1)
+        else:
+            metrics[f'MRR@{k}'] = 0.0
+        
+        # MAP@K (Mean Average Precision - for single relevant item)
+        if rank < k:
+            metrics[f'MAP@{k}'] = 1.0 / (rank + 1)
+        else:
+            metrics[f'MAP@{k}'] = 0.0
+    
+    return metrics
+
+
 # TODO: merge evaluate functions for test and val set
 # evaluate on test set
-def evaluate(model, dataset, args):
+def evaluate(model, dataset, args, k_values=[10, 20]):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
-    NDCG = 0.0
-    HT = 0.0
+    # Initialize metric accumulators
+    metric_sums = {}
+    for k in k_values:
+        metric_sums[f'NDCG@{k}'] = 0.0
+        metric_sums[f'Recall@{k}'] = 0.0
+        metric_sums[f'HR@{k}'] = 0.0
+        metric_sums[f'Precision@{k}'] = 0.0
+        metric_sums[f'MRR@{k}'] = 0.0
+        metric_sums[f'MAP@{k}'] = 0.0
+
     valid_user = 0.0
 
     if usernum>10000:
@@ -164,23 +206,37 @@ def evaluate(model, dataset, args):
 
         valid_user += 1
 
-        if rank < 10:
-            NDCG += 1 / np.log2(rank + 2)
-            HT += 1
+        # Compute all metrics for this user
+        user_metrics = compute_metrics_at_k(rank, k_values)
+        for metric_name, value in user_metrics.items():
+            metric_sums[metric_name] += value
+
         if valid_user % 100 == 0:
             print('.', end="")
             sys.stdout.flush()
 
-    return NDCG / valid_user, HT / valid_user
+    # Average all metrics
+    avg_metrics = {k: v / valid_user for k, v in metric_sums.items()}
+    
+    return avg_metrics
 
 
 # evaluate on val set
-def evaluate_valid(model, dataset, args):
+def evaluate_valid(model, dataset, args, k_values=[10, 20]):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
-    NDCG = 0.0
+    # Initialize metric accumulators
+    metric_sums = {}
+    for k in k_values:
+        metric_sums[f'NDCG@{k}'] = 0.0
+        metric_sums[f'Recall@{k}'] = 0.0
+        metric_sums[f'HR@{k}'] = 0.0
+        metric_sums[f'Precision@{k}'] = 0.0
+        metric_sums[f'MRR@{k}'] = 0.0
+        metric_sums[f'MAP@{k}'] = 0.0
+
     valid_user = 0.0
-    HT = 0.0
+    
     if usernum>10000:
         users = random.sample(range(1, usernum + 1), 10000)
     else:
@@ -210,11 +266,16 @@ def evaluate_valid(model, dataset, args):
 
         valid_user += 1
 
-        if rank < 10:
-            NDCG += 1 / np.log2(rank + 2)
-            HT += 1
+        # Compute all metrics for this user
+        user_metrics = compute_metrics_at_k(rank, k_values)
+        for metric_name, value in user_metrics.items():
+            metric_sums[metric_name] += value
+
         if valid_user % 100 == 0:
             print('.', end="")
             sys.stdout.flush()
 
-    return NDCG / valid_user, HT / valid_user
+    # Average all metrics
+    avg_metrics = {k: v / valid_user for k, v in metric_sums.items()}
+    
+    return avg_metrics
